@@ -22,9 +22,9 @@ jobs:
           python - <<'PY'
           import json
           import os
+          import random
           import urllib.request
-
-          api_key = os.environ["GEMINI_API_KEY"]
+          import urllib.error
 
           with open("config.json", "r", encoding="utf-8") as f:
               config = json.load(f)
@@ -32,46 +32,60 @@ jobs:
           with open("temas.json", "r", encoding="utf-8") as f:
               temas = json.load(f)
 
+          tema = random.choice(temas["temas"])
+
           prompt = f"""
           Você é o redator do blog Salário Capital.
 
-          Escreva um artigo completo em português do Brasil sobre um dos seguintes temas:
-          {temas}
+          Escreva um artigo original em português do Brasil sobre:
 
-          O artigo deve ter entre 1000 e 1500 palavras.
+          {tema}
+
+          O público é formado principalmente por pequenos investidores e pessoas
+          que querem melhorar sua vida financeira.
 
           Regras:
-          - Linguagem simples, clara e profissional.
-          - Público formado principalmente por pequenos investidores e pessoas interessadas em educação financeira.
-          - Não invente dados, números, leis ou informações.
-          - Não use HTML.
-          - Não use Markdown.
-          - Crie uma introdução objetiva.
-          - Crie de 4 a 7 seções com subtítulos.
-          - Termine com uma conclusão prática.
-          - Não coloque emojis.
-          - O conteúdo deve ser original e útil.
+
+          - O artigo deve ter aproximadamente 1.000 a 1.500 palavras.
+          - Use linguagem simples, clara e profissional.
+          - Não invente dados, estatísticas, taxas, leis ou informações.
+          - Não faça promessas de lucro.
+          - Não dê recomendações financeiras personalizadas.
+          - O artigo deve ser útil e educativo.
+          - Evite introduções genéricas.
+          - Não use emojis.
+          - Não coloque HTML.
+          - Não coloque Markdown.
+          - Crie uma introdução de aproximadamente 2 a 3 parágrafos.
+          - Depois da introdução, desenvolva o assunto com 4 a 7 subtítulos.
+          - Cada subtítulo deve ser curto, claro e descritivo.
+          - Cada seção deve ter 1 a 3 parágrafos.
+          - Termine com uma conclusão objetiva.
 
           Retorne SOMENTE um JSON válido neste formato:
 
           {{
             "titulo": "Título do artigo",
-            "introducao": "Texto da introdução",
+            "introducao": [
+              "Primeiro parágrafo da introdução.",
+              "Segundo parágrafo da introdução."
+            ],
             "secoes": [
               {{
-                "titulo": "Subtítulo",
-                "texto": "Texto da seção"
+                "subtitulo": "Primeiro subtítulo",
+                "texto": [
+                  "Primeiro parágrafo da seção.",
+                  "Segundo parágrafo da seção."
+                ]
               }}
             ],
-            "conclusao": "Texto da conclusão"
+            "conclusao": [
+              "Primeiro parágrafo da conclusão."
+            ]
           }}
           """
 
-          url = (
-              "https://generativelanguage.googleapis.com/"
-              "v1beta/models/gemini-3.5-flash-lite:generateContent"
-              f"?key={api_key}"
-          )
+          url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent"
 
           data = {
               "contents": [
@@ -89,95 +103,132 @@ jobs:
               url,
               data=json.dumps(data).encode("utf-8"),
               headers={
-                  "Content-Type": "application/json"
+                  "Content-Type": "application/json",
+                  "x-goog-api-key": os.environ["GEMINI_API_KEY"]
               },
               method="POST"
           )
 
-          with urllib.request.urlopen(request) as response:
-              resultado = json.loads(response.read().decode("utf-8"))
+          try:
+              with urllib.request.urlopen(request) as response:
+                  resultado = json.loads(response.read().decode("utf-8"))
+          except urllib.error.HTTPError as e:
+              print("ERRO HTTP:", e.code)
+              print(e.read().decode("utf-8"))
+              raise
 
-          texto = resultado["candidates"][0]["content"]["parts"][0]["text"]
+          texto = resultado["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+          if texto.startswith("```json"):
+              texto = texto[7:]
+
+          if texto.endswith("```"):
+              texto = texto[:-3]
 
           texto = texto.strip()
 
-          if texto.startswith("```"):
-              texto = texto.replace("```json", "", 1)
-              texto = texto.replace("```", "")
-              texto = texto.strip()
-
           artigo = json.loads(texto)
 
-          with open("artigo_atual.json", "w", encoding="utf-8") as f:
-              json.dump(artigo, f, ensure_ascii=False, indent=2)
+          introducao_html = ""
 
-          print("ARTIGO GERADO COM SUCESSO!")
-          print("Título:", artigo["titulo"])
-          PY
+          for paragrafo in artigo["introducao"]:
+              introducao_html += "<p>" + paragrafo.strip() + "</p>\n"
 
-      - name: Gerar imagem do artigo
-        run: |
-          python gerar_imagem.py
+          secoes_html = ""
 
-      - name: Preparar artigo para o Blogger
-        run: |
-          python - <<'PY'
-          import json
-          import html
+          for secao in artigo["secoes"]:
+              secoes_html += "<h2>" + secao["subtitulo"].strip() + "</h2>\n"
 
-          with open("artigo_atual.json", "r", encoding="utf-8") as f:
-              artigo = json.load(f)
+              for paragrafo in secao["texto"]:
+                  secoes_html += "<p>" + paragrafo.strip() + "</p>\n"
 
-          titulo = artigo["titulo"]
-          introducao = artigo["introducao"]
+          conclusao_html = ""
+
+          for paragrafo in artigo["conclusao"]:
+              conclusao_html += "<p>" + paragrafo.strip() + "</p>\n"
 
           imagem_url = (
               "https://salario-capital.github.io/"
               "salario-capital/imagens/artigo_atual.svg"
           )
 
-          conteudo = ""
-
-          # Imagem
-          conteudo += (
-              '<p style="text-align:center;">'
+          imagem_html = (
+              '<p style="text-align:center;margin:0 0 25px 0;">'
               f'<img src="{imagem_url}" '
               'alt="Imagem ilustrativa do artigo" '
-              'style="width:100%;height:auto;display:block;margin:0 auto 25px auto;">'
-              '</p>'
+              'style="width:100%;height:auto;display:block;margin:0 auto;">'
+              '</p>\n'
           )
 
-          # Introdução
-          conteudo += f"<p>{html.escape(introducao)}</p>"
+          html = (
+              imagem_html
+              + introducao_html
+              + "\n<!--more-->\n\n"
+              + secoes_html
+              + "\n<h2>Conclusão</h2>\n"
+              + conclusao_html
+          )
 
-          # Leia mais
-          conteudo += "<!--more-->"
+          try:
+              with open("artigos.json", "r", encoding="utf-8") as f:
+                  historico = json.load(f)
+          except FileNotFoundError:
+              historico = {"artigos": []}
 
-          # Seções
-          for secao in artigo["secoes"]:
-              conteudo += f"<h2>{html.escape(secao['titulo'])}</h2>"
-              conteudo += f"<p>{html.escape(secao['texto'])}</p>"
+          historico["artigos"].append({
+              "titulo": artigo["titulo"],
+              "tema": tema,
+              "conteudo": html
+          })
 
-          # Conclusão
-          conteudo += "<h2>Conclusão</h2>"
-          conteudo += f"<p>{html.escape(artigo['conclusao'])}</p>"
-
-          artigo_blogger = {
-              "titulo": titulo,
-              "conteudo": conteudo
-          }
-
-          with open("artigo_blogger.json", "w", encoding="utf-8") as f:
+          with open("artigos.json", "w", encoding="utf-8") as f:
               json.dump(
-                  artigo_blogger,
+                  historico,
                   f,
                   ensure_ascii=False,
                   indent=2
               )
 
-          print("ARTIGO PREPARADO PARA O BLOGGER!")
-          print("Imagem:", imagem_url)
+          with open("artigo_atual.json", "w", encoding="utf-8") as f:
+              json.dump(
+                  {
+                      "titulo": artigo["titulo"],
+                      "tema": tema,
+                      "conteudo": html
+                  },
+                  f,
+                  ensure_ascii=False,
+                  indent=2
+              )
+
+          print("Artigo gerado com sucesso!")
+          print("Tema:", tema)
+          print("Título:", artigo["titulo"])
+          print("Imagem incluída antes da introdução.")
+          print("Marcador de expansão inserido após a introdução.")
+          print("Subtítulos estruturados como H2.")
           PY
+
+      - name: Gerar imagem do artigo
+        run: |
+          python gerar_imagem.py
+
+      - name: Salvar imagem no GitHub Pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add imagens/artigo_atual.svg
+
+          if git diff --cached --quiet; then
+            echo "Nenhuma alteração na imagem."
+          else
+            git commit -m "Atualizar imagem do artigo"
+            git push
+          fi
+
+          echo "Aguardando atualização do GitHub Pages..."
+          sleep 30
 
       - name: Publicar artigo no Blogger
         env:
@@ -195,7 +246,7 @@ jobs:
           from google.oauth2.credentials import Credentials
           from googleapiclient.discovery import build
 
-          with open("artigo_blogger.json", "r", encoding="utf-8") as f:
+          with open("artigo_atual.json", "r", encoding="utf-8") as f:
               artigo = json.load(f)
 
           credentials = Credentials(
@@ -232,14 +283,19 @@ jobs:
           print("URL:", resultado.get("url"))
           PY
 
-      - name: Salvar arquivos no repositório
+      - name: Salvar artigo no repositório
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add artigo_atual.json artigo_blogger.json imagens/artigo_atual.svg
+          git add artigos.json artigo_atual.json
 
-          git commit -m "Gerar artigo e imagem" || echo "Nenhuma alteração para salvar"
-
-          git push
+          if git diff --cached --quiet; then
+            echo "Nenhuma alteração para salvar."
+          else
+            git commit -m "Adicionar artigo gerado automaticamente"
+            git push "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" HEAD:${{ github.ref_name }}
+          fi
 ```
