@@ -1,4 +1,3 @@
-```yaml
 name: Gerar artigos
 
 on:
@@ -298,4 +297,3 @@ jobs:
             git commit -m "Adicionar artigo gerado automaticamente"
             git push "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" HEAD:${{ github.ref_name }}
           fi
-```
