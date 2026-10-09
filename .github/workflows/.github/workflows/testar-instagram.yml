@@ -1,0 +1,65 @@
+
+name: Testar conexão Instagram
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testar-conexao:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verificar token do Instagram
+        env:
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+          import urllib.error
+
+          token = os.environ.get("INSTAGRAM_ACCESS_TOKEN", "").strip()
+
+          if not token:
+              print("ERRO: o segredo INSTAGRAM_ACCESS_TOKEN não foi encontrado.")
+              raise SystemExit(1)
+
+          params = urllib.parse.urlencode({
+              "fields": "user_id,username",
+              "access_token": token
+          })
+
+          url = "https://graph.instagram.com/v26.0/me?" + params
+          request = urllib.request.Request(url, method="GET")
+
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  data = json.loads(response.read().decode("utf-8"))
+
+              username = data.get("username", "não informado")
+              user_id = data.get("user_id", "não informado")
+
+              print("CONEXÃO COM A API CONCLUÍDA.")
+              print("Usuário:", username)
+              print("ID retornado:", user_id)
+
+          except urllib.error.HTTPError as error:
+              print("A API retornou erro HTTP:", error.code)
+              try:
+                  data = json.loads(error.read().decode("utf-8"))
+                  details = data.get("error", {})
+                  print("Mensagem:", details.get("message", "Erro não detalhado"))
+                  print("Código da API:", details.get("code", "não informado"))
+              except Exception:
+                  print("Não foi possível interpretar a resposta da API.")
+              raise SystemExit(1)
+
+          except Exception as error:
+              print("Falha na conexão:", type(error).__name__)
+              raise SystemExit(1)
+          PY
