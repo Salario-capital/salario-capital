@@ -1,0 +1,56 @@
+
+name: Preparar imagem Instagram
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  preparar-imagem:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar arquivos do projeto
+        uses: actions/checkout@v4
+
+      - name: Converter SVG para JPEG
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install cairosvg pillow
+
+          python - <<'PY'
+          import cairosvg
+          from PIL import Image
+          from pathlib import Path
+          import io
+          import sys
+
+          origem = Path("imagens/artigo_atual.svg")
+          destino = Path("imagens/artigo_atual.jpg")
+
+          if not origem.exists():
+              print(f"ERRO: arquivo não encontrado: {origem}")
+              sys.exit(1)
+
+          png = cairosvg.svg2png(url=str(origem))
+          imagem = Image.open(io.BytesIO(png)).convert("RGB")
+          imagem.save(destino, "JPEG", quality=92, optimize=True)
+
+          print(f"Imagem JPEG criada: {destino}")
+          print(f"Dimensões: {imagem.width} x {imagem.height}")
+          PY
+
+      - name: Salvar imagem no repositório
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add imagens/artigo_atual.jpg
+
+          if git diff --cached --quiet; then
+            echo "Nenhuma alteração na imagem."
+          else
+            git commit -m "Preparar imagem JPEG para Instagram"
+            git push
+          fi
