@@ -1,45 +1,46 @@
 
-      - name: Preparar imagem JPG para Instagram
+      - name: Salvar imagem no GitHub Pages
         run: |
-          python -m pip install --quiet cairosvg pillow
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add imagens/*.svg imagens/*.jpg
+
+          if git diff --cached --quiet; then
+            echo "Nenhuma alteração nas imagens."
+          else
+            git commit -m "Salvar imagens exclusivas do artigo"
+            git push
+          fi
+
+          echo "Aguardando atualização do GitHub Pages..."
+          sleep 30
 
           python - <<'PY'
           import json
-          import cairosvg
-          from PIL import Image
-          from io import BytesIO
           import os
+          import urllib.request
 
           with open("artigo_atual.json", "r", encoding="utf-8") as f:
               artigo = json.load(f)
 
-          svg_path = artigo["imagem_svg_arquivo"]
-          jpg_path = artigo["imagem_jpg_arquivo"]
+          for chave in ("imagem_svg_url", "imagem_jpg_url"):
+              url = artigo[chave]
+              print("Verificando:", url)
 
-          os.makedirs(os.path.dirname(jpg_path), exist_ok=True)
+              try:
+                  req = urllib.request.Request(
+                      url,
+                      headers={"Cache-Control": "no-cache"},
+                      method="GET"
+                  )
+                  with urllib.request.urlopen(req, timeout=30) as resposta:
+                      print("HTTP:", resposta.status)
+                      print("Content-Type:", resposta.headers.get("Content-Type"))
+              except Exception as erro:
+                  raise RuntimeError(
+                      f"A imagem ainda não está acessível: {url}"
+                  ) from erro
 
-          png_bytes = cairosvg.svg2png(
-              url=svg_path,
-              output_width=1080
-          )
-
-          imagem = Image.open(BytesIO(png_bytes)).convert("RGB")
-
-          imagem.save(
-              jpg_path,
-              format="JPEG",
-              quality=90,
-              optimize=True
-          )
-
-          # Mantém uma cópia com o nome antigo por compatibilidade.
-          imagem.save(
-              "imagens/artigo_atual.jpg",
-              format="JPEG",
-              quality=90,
-              optimize=True
-          )
-
-          print("JPG exclusivo criado:", jpg_path)
-          print("Cópia de compatibilidade criada: imagens/artigo_atual.jpg")
+          print("Imagens exclusivas verificadas.")
           PY
