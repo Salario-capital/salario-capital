@@ -1,0 +1,116 @@
+
+name: Publicar artigo no Instagram
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmar_publicacao:
+        description: "Confirmo que quero publicar no Instagram"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  publicar:
+    if: ${{ inputs.confirmar_publicacao }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Publicar imagem e legenda
+        env:
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          INSTAGRAM_USER_ID: "17841423969682571"
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.parse
+          import urllib.request
+          import urllib.error
+
+          token = os.environ.get("INSTAGRAM_ACCESS_TOKEN", "").strip()
+          user_id = os.environ["INSTAGRAM_USER_ID"]
+
+          if not token:
+              print("ERRO: segredo INSTAGRAM_ACCESS_TOKEN não encontrado.")
+              sys.exit(1)
+
+          image_url = (
+              "https://salario-capital.github.io/"
+              "salario-capital/imagens/artigo_atual.jpg"
+          )
+
+          caption = """💡 Renda extra: caminhos práticos para começar
+
+          Buscar novas fontes de renda pode ajudar no planejamento financeiro. O primeiro passo é avaliar suas habilidades, o tempo disponível e os custos envolvidos antes de começar.
+
+          Leia o artigo completo: link do blog na bio!
+
+          #SalarioCapital #RendaExtra #EducaçãoFinanceira #FinançasPessoais"""
+
+          base_url = "https://graph.instagram.com/v26.0"
+
+          def post_form(url, fields):
+              body = urllib.parse.urlencode(fields).encode("utf-8")
+              request = urllib.request.Request(
+                  url,
+                  data=body,
+                  headers={"Content-Type": "application/x-www-form-urlencoded"},
+                  method="POST"
+              )
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return json.loads(response.read().decode("utf-8"))
+
+          try:
+              print("Etapa 1/2: preparando a publicação...")
+              media = post_form(
+                  f"{base_url}/{user_id}/media",
+                  {
+                      "image_url": image_url,
+                      "caption": caption,
+                      "access_token": token
+                  }
+              )
+
+              creation_id = media.get("id")
+              if not creation_id:
+                  print("ERRO: a API não retornou o identificador da mídia.")
+                  sys.exit(1)
+
+              print("Imagem preparada. Etapa 2/2: publicando...")
+              result = post_form(
+                  f"{base_url}/{user_id}/media_publish",
+                  {
+                      "creation_id": creation_id,
+                      "access_token": token
+                  }
+              )
+
+              post_id = result.get("id")
+              if not post_id:
+                  print("A API não confirmou o identificador da publicação.")
+                  sys.exit(1)
+
+              print("PUBLICAÇÃO CONCLUÍDA COM SUCESSO.")
+              print("ID da publicação:", post_id)
+
+          except urllib.error.HTTPError as error:
+              print("A API retornou erro HTTP:", error.code)
+              try:
+                  details = json.loads(error.read().decode("utf-8"))
+                  api_error = details.get("error", {})
+                  print("Mensagem:", api_error.get("message", "Erro não detalhado"))
+                  print("Código:", api_error.get("code", "não informado"))
+                  print("Subcódigo:", api_error.get("error_subcode", "não informado"))
+              except Exception:
+                  print("Não foi possível interpretar a resposta da API.")
+              sys.exit(1)
+
+          except Exception as error:
+              print("Falha durante a publicação:", type(error).__name__)
+              sys.exit(1)
+          PY
