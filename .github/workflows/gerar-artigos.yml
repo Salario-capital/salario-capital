@@ -1,3 +1,4 @@
+
 name: Gerar artigos
 
 on:
@@ -212,17 +213,42 @@ jobs:
         run: |
           python gerar_imagem.py
 
+      - name: Preparar imagem JPG para Instagram
+        run: |
+          python -m pip install --quiet cairosvg pillow
+
+          python - <<'PY'
+          import cairosvg
+          from PIL import Image
+          from io import BytesIO
+
+          png_bytes = cairosvg.svg2png(
+              url="imagens/artigo_atual.svg",
+              output_width=1080
+          )
+
+          imagem = Image.open(BytesIO(png_bytes)).convert("RGB")
+          imagem.save(
+              "imagens/artigo_atual.jpg",
+              format="JPEG",
+              quality=90,
+              optimize=True
+          )
+
+          print("Imagem JPG preparada para o Instagram.")
+          PY
+
       - name: Salvar imagem no GitHub Pages
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add imagens/artigo_atual.svg
+          git add imagens/artigo_atual.svg imagens/artigo_atual.jpg
 
           if git diff --cached --quiet; then
-            echo "Nenhuma alteração na imagem."
+            echo "Nenhuma alteração nas imagens."
           else
-            git commit -m "Atualizar imagem do artigo"
+            git commit -m "Atualizar imagens do artigo"
             git push
           fi
 
