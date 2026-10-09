@@ -28,12 +28,14 @@ jobs:
           import json
           import os
           import sys
+          import time
           import urllib.parse
           import urllib.request
           import urllib.error
 
           token = os.environ.get("INSTAGRAM_ACCESS_TOKEN", "").strip()
           user_id = os.environ["INSTAGRAM_USER_ID"]
+          base_url = "https://graph.instagram.com/v26.0"
 
           if not token:
               print("ERRO: segredo INSTAGRAM_ACCESS_TOKEN não encontrado.")
@@ -52,22 +54,24 @@ jobs:
 
           #SalarioCapital #RendaExtra #EducaçãoFinanceira #FinançasPessoais"""
 
-          base_url = "https://graph.instagram.com/v26.0"
+          def request_api(url, fields=None):
+              if fields is not None:
+                  body = urllib.parse.urlencode(fields).encode("utf-8")
+                  req = urllib.request.Request(
+                      url,
+                      data=body,
+                      headers={"Content-Type": "application/x-www-form-urlencoded"},
+                      method="POST"
+                  )
+              else:
+                  req = urllib.request.Request(url, method="GET")
 
-          def post_form(url, fields):
-              body = urllib.parse.urlencode(fields).encode("utf-8")
-              request = urllib.request.Request(
-                  url,
-                  data=body,
-                  headers={"Content-Type": "application/x-www-form-urlencoded"},
-                  method="POST"
-              )
-              with urllib.request.urlopen(request, timeout=60) as response:
+              with urllib.request.urlopen(req, timeout=60) as response:
                   return json.loads(response.read().decode("utf-8"))
 
           try:
-              print("Etapa 1/2: preparando a publicação...")
-              media = post_form(
+              print("Etapa 1/3: criando o contêiner da imagem...")
+              media = request_api(
                   f"{base_url}/{user_id}/media",
                   {
                       "image_url": image_url,
@@ -78,11 +82,46 @@ jobs:
 
               creation_id = media.get("id")
               if not creation_id:
-                  print("ERRO: a API não retornou o identificador da mídia.")
+                  print("ERRO: a API não retornou o ID do contêiner.")
                   sys.exit(1)
 
-              print("Imagem preparada. Etapa 2/2: publicando...")
-              result = post_form(
+              print("Etapa 2/3: aguardando o processamento da imagem...")
+              status = None
+
+              for tentativa in range(1, 19):
+                  params = urllib.parse.urlencode({
+                      "fields": "status_code,status",
+                      "access_token": token
+                  })
+                  status_url = (
+                      f"{base_url}/{creation_id}?{params}"
+                  )
+
+                  try:
+                      result = request_api(status_url)
+                  except urllib.error.HTTPError as error:
+                      print("Erro ao consultar o processamento. HTTP:", error.code)
+                      raise
+
+                  status = result.get("status_code", "DESCONHECIDO")
+                  print(f"Verificação {tentativa}/18: {status}")
+
+                  if status == "FINISHED":
+                      break
+
+                  if status in ("ERROR", "EXPIRED"):
+                      print("A Meta não conseguiu preparar a imagem.")
+                      print("Detalhe:", result.get("status", "não informado"))
+                      sys.exit(1)
+
+                  time.sleep(10)
+              else:
+                  print("A imagem ainda não ficou pronta após 3 minutos.")
+                  print("Execute novamente mais tarde para tentar outra publicação.")
+                  sys.exit(1)
+
+              print("Etapa 3/3: publicando no Instagram...")
+              published = request_api(
                   f"{base_url}/{user_id}/media_publish",
                   {
                       "creation_id": creation_id,
@@ -90,9 +129,9 @@ jobs:
                   }
               )
 
-              post_id = result.get("id")
+              post_id = published.get("id")
               if not post_id:
-                  print("A API não confirmou o identificador da publicação.")
+                  print("A API não confirmou o ID da publicação.")
                   sys.exit(1)
 
               print("PUBLICAÇÃO CONCLUÍDA COM SUCESSO.")
